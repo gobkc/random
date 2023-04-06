@@ -1,32 +1,11 @@
-package main
+package random
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"math/big"
 	"reflect"
 	"regexp"
 )
-
-// AlphaNumber mix of numbers and letters
-func AlphaNumber(length int) string {
-	b := make([]byte, length)
-	rand.Read(b)
-	s := fmt.Sprintf(`%X`, b)
-	return s[:length]
-}
-
-func Number[T int | int32 | int64 | string](length int) (t T) {
-	//maxNum := int64(math.Pow10(length) - 1)
-	result, _ := rand.Int(rand.Reader, big.NewInt(int64(length)))
-	if reflect.TypeOf(t).Kind() == reflect.String {
-		reflect.ValueOf(&t).Elem().SetString(result.String())
-	} else {
-		return T(result.Int64())
-	}
-	return
-}
 
 var ErrorSupport = errors.New("ErrorOnlyAllowSliceOrStruct")
 var ErrorSliceMakeFirst = errors.New("ErrorPleaseMakeSliceFirst")
@@ -53,61 +32,8 @@ var unmarshalMap = map[reflect.Kind]func(dest any) error{
 		}
 		for curRow := 0; curRow < length; curRow++ {
 			v := meta
-			rowTypeOf := reflect.TypeOf(v)
-			rowValueOf := reflect.ValueOf(v)
-			if rowTypeOf.Kind() == reflect.Pointer {
-				rowTypeOf = rowTypeOf.Elem()
-				rowValueOf = rowValueOf.Elem()
-			}
-			for curField := 0; curField < rowTypeOf.NumField(); curField++ {
-				filedName := rowTypeOf.Field(curField).Tag.Get("json")
-				if filedName == "" {
-					filedName = rowTypeOf.Field(curField).Name
-					filedName = toSnake(filedName)
-				}
-				bind := rowTypeOf.Field(curField).Tag.Get("bind")
-				if bind != "" {
-					filedName = bind
-				}
-				for realField, rule := range bindRules {
-					curValueOf := rowValueOf.Field(curField)
-					curTypeOf := reflect.TypeOf(curValueOf.Interface())
-					must := regexp.MustCompile(rule)
-					match := must.FindString(filedName)
-					if match == "" {
-						if curTypeOf.Kind() == reflect.Int {
-							value := genField[int]("number")
-							rowValueOf.Field(curField).Set(reflect.ValueOf(value))
-						}
-						if curTypeOf.Kind() == reflect.Int32 {
-							value := genField[int32]("number")
-							rowValueOf.Field(curField).Set(reflect.ValueOf(value))
-						}
-						if curTypeOf.Kind() == reflect.Int64 {
-							value := genField[int64]("number")
-							rowValueOf.Field(curField).Set(reflect.ValueOf(value))
-						}
-						if curTypeOf.Kind() == reflect.Float32 || curTypeOf.Kind() == reflect.Float32 {
-							value := genField[float32]("float")
-							rowValueOf.Field(curField).SetFloat(float64(value))
-						}
-						if curTypeOf.Kind() == reflect.String {
-							value := genField[string]("string")
-							rowValueOf.Field(curField).SetString(value)
-						}
-						if curTypeOf.Kind() == reflect.Bool {
-							value := genField[bool]("bool")
-							rowValueOf.Field(curField).SetBool(value)
-						}
-						continue
-					}
-					value := genField[string](realField)
-					if curValueOf.Type().Kind() != reflect.String {
-						continue
-					}
-					rowValueOf.Field(curField).SetString(value)
-					break
-				}
+			if err := unmarshalStruct(v); err != nil {
+				return err
 			}
 			valueOf.Index(curRow).Set(reflect.ValueOf(v).Elem())
 		}
@@ -123,10 +49,9 @@ var bindRules = map[string]string{
 	"sex":      `(?i)(sex)`,
 	"email":    `(?i)(mail|email)`,
 	"phone":    `(?i)(mobile|phone|tel|contact)`,
-	//other string、int、float、float
-	"string": ``,
-	"float":  ``,
-	"bool":   ``,
+	"string":   ``, //other string、int、float、float
+	"float":    ``,
+	"bool":     ``,
 }
 
 func Unmarshal(bindSliceOrStruct any) error {
@@ -189,34 +114,65 @@ func genField[T int | int32 | int64 | string | float64 | float32 | bool](field s
 }
 
 func unmarshalStruct(dest any) error {
-	valueOf := reflect.ValueOf(dest)
-	typeOf := reflect.TypeOf(dest)
-	if typeOf.Kind() == reflect.Pointer {
-		valueOf = valueOf.Elem()
-		typeOf = typeOf.Elem()
+	rowTypeOf := reflect.TypeOf(dest)
+	rowValueOf := reflect.ValueOf(dest)
+	if rowTypeOf.Kind() == reflect.Pointer {
+		rowTypeOf = rowTypeOf.Elem()
+		rowValueOf = rowValueOf.Elem()
 	}
-	for curField := 0; curField < typeOf.NumField(); curField++ {
-		filedName := typeOf.Name
-		fmt.Println(filedName)
+	for curField := 0; curField < rowTypeOf.NumField(); curField++ {
+		filedName := rowTypeOf.Field(curField).Tag.Get("json")
+		if filedName == "" {
+			filedName = rowTypeOf.Field(curField).Name
+			filedName = toSnake(filedName)
+		}
+		bind := rowTypeOf.Field(curField).Tag.Get("bind")
+		if bind != "" {
+			filedName = bind
+		}
+		for realField, rule := range bindRules {
+			curValueOf := rowValueOf.Field(curField)
+			curTypeOf := reflect.TypeOf(curValueOf.Interface())
+			must := regexp.MustCompile(rule)
+			match := must.FindString(filedName)
+			if match == "" {
+				if curTypeOf.Kind() == reflect.Int {
+					value := genField[int]("number")
+					rowValueOf.Field(curField).Set(reflect.ValueOf(value))
+				}
+				if curTypeOf.Kind() == reflect.Int32 {
+					value := genField[int32]("number")
+					rowValueOf.Field(curField).Set(reflect.ValueOf(value))
+				}
+				if curTypeOf.Kind() == reflect.Int64 {
+					value := genField[int64]("number")
+					rowValueOf.Field(curField).Set(reflect.ValueOf(value))
+				}
+				if curTypeOf.Kind() == reflect.Float32 || curTypeOf.Kind() == reflect.Float32 {
+					value := genField[float32]("float")
+					rowValueOf.Field(curField).SetFloat(float64(value))
+				}
+				if curTypeOf.Kind() == reflect.String {
+					value := genField[string]("string")
+					rowValueOf.Field(curField).SetString(value)
+				}
+				if curTypeOf.Kind() == reflect.Bool {
+					value := genField[bool]("bool")
+					rowValueOf.Field(curField).SetBool(value)
+				}
+				continue
+			}
+			value := genField[string](realField)
+			if curValueOf.Type().Kind() != reflect.String {
+				continue
+			}
+			rowValueOf.Field(curField).SetString(value)
+			break
+		}
 	}
 	return nil
 }
 
-type Profile struct {
-	UserName string
-	Sex      string
-	Sex2     int
-	Phone    string
-	Mobile   string
-	Email    string
-	Other    string
-}
-
-func main() {
-	var profiles = make([]Profile, 1000)
-	Unmarshal(&profiles)
-	fmt.Println(profiles)
-}
 func toSnake(name string) string {
 	var convert []byte
 	for i, asc := range name {
